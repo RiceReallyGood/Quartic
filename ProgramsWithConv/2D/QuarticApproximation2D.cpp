@@ -11,7 +11,7 @@ QuarticApproximation2D::QuarticApproximation2D(int Nt_half, int Nx_, int Ny_, do
 {
     iw = new Complex[Nt * 3];
     h = new Complex[Nts * 3];
-    g = new Complex[Nts * 3];
+    g = new Complex[Nts];
 
     c = new Complex[NN];
     d1 = new Complex[NN];
@@ -34,12 +34,9 @@ QuarticApproximation2D::QuarticApproximation2D(int Nt_half, int Nx_, int Ny_, do
         yid[alpha] = alpha % Ny;
     }
 
-    for (int alpha = 0; alpha < 3 * Nts; alpha++)
+    for (int alpha = 0; alpha < Nts; alpha++)
         g[alpha] = -1. / (iw[tid[alpha]] - 2. * t * (cos(2. * pi * xid[alpha] / Nx) + cos(2. * pi * yid[alpha] / Ny)) - delmu);
 
-    //initialize chains
-    for (int n = 0; n < NN; n++)
-        c[n] = 0., d1[n] = 0., d2[n] = 0., r[n] = 0.;
     calculate();
 }
 
@@ -71,30 +68,10 @@ void QuarticApproximation2D::calculate()
     Complex *r1corr = new Complex[2 * NN];
 
     Complex *hco = new Complex[3 * Nt * (2 * Nx - 1) * (2 * Ny - 1)];
-    Complex *gco = new Complex[3 * Nts];
     Complex *hgconv = new Complex[2 * Nts];
     Complex *hgcorr = new Complex[2 * Nts];
 
-    //initialize gco and hco
     int hcospacedim = (2 * Nx - 1) * (2 * Ny - 1);
-    for (int ix = 0; ix < 2 * Nx - 1; ix++)
-    {
-        for (int iy = 0; iy < 2 * Ny - 1; iy++)
-        {
-            for (int n = Nt; n < 2 * Nt; n++)
-                hco[(n + Nt) * hcospacedim + ix * (2 * Ny - 1) + iy] = h[n * Ns + (ix + 1) % Nx * Ny + (iy + 1) % Ny];
-            for (int n = 2 * Nt; n < 3 * Nt; n++)
-                hco[(n - 2 * Nt) * hcospacedim + ix * (2 * Ny - 1) + iy] = h[n * Ns + (ix + 1) % Nx * Ny + (iy + 1) % Ny];
-        }
-    }
-
-    for (int idx = 0; idx < Ns; idx++)
-    {
-        for (int n = Nt; n < 2 * Nt; n++)
-            gco[(n + Nt) * Ns + idx] = g[n * Ns + idx];
-        for (int n = 2 * Nt; n < 3 * Nt; n++)
-            gco[(n - 2 * Nt) * Ns + idx] = g[n * Ns + idx];
-    }
 
     int dims = 3;
     int hshape[] = {3 * Nt, 2 * Nx - 1, 2 * Ny - 1};
@@ -104,16 +81,16 @@ void QuarticApproximation2D::calculate()
     int chain1stride[] = {Nts * Ns, Nts * Ny, Nts};
     int chain2stride[] = {Ns, Ny, 1};
     int resultstride[] = {Ns, Ny, 1};
-    int startconv[] = {Nt, Nx - 1, Ny - 1};
-    int startcorr[] = {-2 * Nt, -Nx + 1, -Ny + 1};
+    int convstart[] = {Nt, Nx - 1, Ny - 1};
+    int corrstart[] = {-2 * Nt, -Nx + 1, -Ny + 1};
 
     int gshape[] = {3 * Nt, Nx, Ny};
-    int hgstartconv[] = {2 * Nt, Nx - 1, Ny - 1};
-    int hgstartcorr[] = {-Nt, -Nx + 1, -Ny + 1};
+    int gstride[] = {Ns, Ny, 1};
 
     int Nit = 2000;
     for (int it = 0; it < Nit; it++)
     {
+        std::cout << greensfunction(0, 0, 0) << std::endl;
         Complex nhalf = 0;
         for (int alpha = 0; alpha < 3 * Nts; alpha++)
             nhalf += g[alpha];
@@ -123,15 +100,11 @@ void QuarticApproximation2D::calculate()
             h[alpha] = -1. / (iw[tid[alpha]] - 2. * t * (cos(2. * pi * xid[alpha] / Nx) + cos(2. * pi * yid[alpha] / Ny)) - delmu /*- U / 2.*/ + U * nhalf);
         //std::cout << nhalf << std::endl;
 
-        //write g and h to gco and hco
+        //write h to hco
         for (int ix = 0; ix < 2 * Nx - 1; ix++)
             for (int iy = 0; iy < 2 * Ny - 1; iy++)
-                for (int n = 0; n < Nt; n++)
-                    hco[(n + Nt) * hcospacedim + ix * (2 * Ny - 1) + iy] = h[n * Ns + (ix + 1) % Nx * Ny + (iy + 1) % Ny];
-
-        for (int idx = 0; idx < Ns; idx++)
-            for (int n = 0; n < Nt; n++)
-                gco[(n + Nt) * Ns + idx] = g[n * Ns + idx];
+                for (int n = 0; n < 3 * Nt; n++)
+                    hco[n * hcospacedim + ix * (2 * Ny - 1) + iy] = h[(n + 2 * Nt) % (3 * Nt) * Ns + (ix + 1) % Nx * Ny + (iy + 1) % Ny];
 
         VSLConvTaskPtr convtask;
         vslzConvNewTaskX(&convtask, VSL_CONV_MODE_FFT, dims, hshape, chainshape, resultshape,
@@ -140,8 +113,14 @@ void QuarticApproximation2D::calculate()
         vslzCorrNewTaskX(&corrtask, VSL_CONV_MODE_FFT, dims, hshape, chainshape, resultshape,
                          reinterpret_cast<MKL_Complex16 *>(hco), hstride);
 
-        vslConvSetStart(convtask, startconv);
-        vslCorrSetStart(corrtask, startcorr);
+        vslConvSetStart(convtask, convstart);
+        vslCorrSetStart(corrtask, corrstart);
+
+        vslzConvExecX(convtask, reinterpret_cast<MKL_Complex16 *>(g), gstride,
+                      reinterpret_cast<MKL_Complex16 *>(hgconv), resultstride);
+        vslzCorrExecX(corrtask, reinterpret_cast<MKL_Complex16 *>(g), gstride,
+                      reinterpret_cast<MKL_Complex16 *>(hgcorr), resultstride);
+
 #pragma omp parallel for
         for (int gamma = 0; gamma < Nts; gamma++)
         {
@@ -166,22 +145,6 @@ void QuarticApproximation2D::calculate()
             vslzCorrExecX(corrtask, reinterpret_cast<MKL_Complex16 *>(&r[gamma]), chain1stride,
                           reinterpret_cast<MKL_Complex16 *>(&r1corr[gamma * 2 * Nts]), resultstride);
         }
-
-        VSLConvTaskPtr hgconvtask;
-        vslzConvNewTaskX(&hgconvtask, VSL_CONV_MODE_FFT, dims, hshape, gshape, resultshape,
-                         reinterpret_cast<MKL_Complex16 *>(hco), hstride);
-        vslConvSetStart(hgconvtask, hgstartconv);
-        vslzConvExecX(hgconvtask, reinterpret_cast<MKL_Complex16 *>(gco), chain2stride,
-                      reinterpret_cast<MKL_Complex16 *>(hgconv), resultstride);
-        vslConvDeleteTask(&hgconvtask);
-
-        VSLCorrTaskPtr hgcorrtask;
-        vslzCorrNewTaskX(&hgcorrtask, VSL_CORR_MODE_FFT, dims, hshape, gshape, resultshape,
-                         reinterpret_cast<MKL_Complex16 *>(hco), hstride);
-        vslCorrSetStart(hgcorrtask, hgstartcorr);
-        vslzCorrExecX(hgcorrtask, reinterpret_cast<MKL_Complex16 *>(gco), chain2stride,
-                      reinterpret_cast<MKL_Complex16 *>(hgcorr), resultstride);
-        vslCorrDeleteTask(&hgcorrtask);
 
         vslConvDeleteTask(&convtask);
         vslCorrDeleteTask(&corrtask);
@@ -259,6 +222,9 @@ void QuarticApproximation2D::calculate()
             break;
     }
 
+    delete[] hco;
+    delete[] hgconv;
+    delete[] hgcorr;
     delete[] dd;
     delete[] nc;
     delete[] nd1;
@@ -292,9 +258,6 @@ void QuarticApproximation2D::sett(double t_)
 void QuarticApproximation2D::setdelmu(double delmu_)
 {
     delmu = delmu_;
-    for (int alpha = Nts; alpha < 3 * Nts; alpha++)
-        g[alpha] = -1. / (iw[tid[alpha]] - 2. * t * (cos(2. * pi * xid[alpha] / Nx) + cos(2. * pi * yid[alpha] / Ny)) - delmu);
-
     calculate();
 }
 
@@ -302,19 +265,15 @@ void QuarticApproximation2D::setparms(double U_, double delmu_)
 {
     U = U_;
     delmu = delmu_;
-    f_5 = 0.5 * U * T / Ns;
-    for (int alpha = Nts; alpha < 3 * Nts; alpha++)
-        g[alpha] = -1. / (iw[tid[alpha]] - 2. * t * (cos(2. * pi * xid[alpha] / Nx) + cos(2. * pi * yid[alpha] / Ny)) - delmu);
     calculate();
 }
 
 QuarticApproximation2D::Complex QuarticApproximation2D::greensfunction(int kx, int ky, int n) const
 {
-    if (n > 3 * Nt / 2 - 1 || n < -3 * Nt / 2)
+    if (n > Nt / 2 - 1 || n < -Nt / 2)
         return 0;
     kx %= Nx, ky %= Ny;
-    int tid = n + Nt / 2 < 0 ? n + 7 * Nt / 2 : n + Nt / 2;
-    return g[tid * Ns + kx * Ny + ky];
+    return g[(n + Nt / 2) * Ns + kx * Ny + ky];
 }
 
 QuarticApproximation2D::~QuarticApproximation2D()

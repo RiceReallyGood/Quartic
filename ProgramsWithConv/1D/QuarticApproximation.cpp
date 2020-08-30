@@ -10,7 +10,7 @@ QuarticApproximation::QuarticApproximation(int Nt_half, int Ns_, double T_, doub
 {
     iw = new Complex[Nt * 3];
     h = new Complex[Nts * 3];
-    g = new Complex[Nts * 3];
+    g = new Complex[Nts];
 
     c = new Complex[NN];
     d1 = new Complex[NN];
@@ -24,21 +24,14 @@ QuarticApproximation::QuarticApproximation(int Nt_half, int Ns_, double T_, doub
         iw[n] = I * pi * T * (2. * (n - Nt_half) + 1);
     for (int n = 2 * Nt; n < 3 * Nt; n++)
         iw[n] = I * pi * T * (2. * (n - 3 * Nt - Nt_half) + 1);
-
-    for (int alpha = 0; alpha < 3 * Nts; alpha++)
-    {
-        int omega = alpha / Ns, k = alpha % Ns;
-        g[alpha] = -1. / (iw[omega] - 2. * t * cos(2. * pi * k / Ns) - delmu);
-    }
-
-    //initialize chains
-    for (int n = 0; n < NN; n++)
-        c[n] = 0., d1[n] = 0., d2[n] = 0., r[n] = 0.;
-
-    for (int alpha = 0; alpha < 3 * Nts; alpha++)
-    {
+    
+    for (int alpha = 0; alpha < 3 * Nts; alpha++){
         tid[alpha] = alpha / Ns;
         sid[alpha] = alpha % Ns;
+    }
+
+    for (int alpha = 0; alpha <  Nts; alpha++){
+        g[alpha] = -1. / (iw[tid[alpha]] - 2. * t * cos(2. * pi * sid[alpha] / Ns) - delmu);
     }
 
     calculate();
@@ -71,27 +64,8 @@ void QuarticApproximation::calculate()
     Complex *r1corr = new Complex[2 * NN];
 
     Complex *hco = new Complex[3 * Nt * (2 * Ns - 1)];
-    Complex *gco = new Complex[3 * Nts];
     Complex *hgconv = new Complex[2 * Nts];
     Complex *hgcorr = new Complex[2 * Nts];
-
-    //initialize gco and hco
-    for (int idx = 0; idx < 2 * Ns - 1; idx++)
-    {
-        for (int n = Nt; n < 2 * Nt; n++)
-            hco[(n + Nt) * (2 * Ns - 1) + idx] = h[n * Ns + (idx + 1) % Ns];
-
-        for (int n = 2 * Nt; n < 3 * Nt; n++)
-            hco[(n - 2 * Nt) * (2 * Ns - 1) + idx] = h[n * Ns + (idx + 1) % Ns];
-    }
-
-    for (int idx = 0; idx < Ns; idx++)
-    {
-        for (int n = Nt; n < 2 * Nt; n++)
-            gco[(n + Nt) * Ns + idx] = g[n * Ns + idx];
-        for (int n = 2 * Nt; n < 3 * Nt; n++)
-            gco[(n - 2 * Nt) * Ns + idx] = g[n * Ns + idx];
-    }
 
     int dims = 2;
     int hshape[] = {3 * Nt, 2 * Ns - 1};
@@ -101,18 +75,18 @@ void QuarticApproximation::calculate()
     int chain1stride[] = {Nts * Ns, Nts};
     int chain2stride[] = {Ns, 1};
     int resultstride[] = {Ns, 1};
-    int startconv[] = {Nt, Ns - 1};
-    int startcorr[] = {-2 * Nt, -Ns + 1};
+    int convstart[] = {Nt, Ns - 1};
+    int corrstart[] = {-2 * Nt, -Ns + 1};
 
-    int gshape[] = {3 * Nt, Ns};
-    int hgstartconv[] = {2 * Nt, Ns - 1};
-    int hgstartcorr[] = {-Nt, -Ns + 1};
+    int gshape[] = {Nt, Ns};
+    int gstride[] = {Ns, 1};
 
     int Nit = 2000;
     for (int it = 0; it < Nit; it++)
     {
+        std::cout << greensfunction(0, 0) << std::endl;
         Complex nhalf = 0;
-        for (int alpha = 0; alpha < 3 * Nts; alpha++)
+        for (int alpha = 0; alpha < Nts; alpha++)
             nhalf += g[alpha];
         nhalf *= T / Ns;
 
@@ -123,14 +97,10 @@ void QuarticApproximation::calculate()
         }
         //std::cout << nhalf << std::endl;
 
-        //write g and h to gco and hco
+        //write h to hco
         for (int idx = 0; idx < 2 * Ns - 1; idx++)
-            for (int n = 0; n < Nt; n++)
-                hco[(n + Nt) * (2 * Ns - 1) + idx] = h[n * Ns + (idx + 1) % Ns];
-
-        for (int idx = 0; idx < Ns; idx++)
-            for (int n = 0; n < Nt; n++)
-                gco[(n + Nt) * Ns + idx] = g[n * Ns + idx];
+            for (int n = 0; n < 3 * Nt; n++)
+                hco[n * (2 * Ns - 1) + idx] = h[(n + 2 * Nt) % (3 * Nt) * Ns + (idx + 1) % Ns];
 
         VSLConvTaskPtr convtask;
         vslzConvNewTaskX(&convtask, VSL_CONV_MODE_FFT, dims, hshape, chainshape, resultshape,
@@ -139,8 +109,14 @@ void QuarticApproximation::calculate()
         vslzCorrNewTaskX(&corrtask, VSL_CONV_MODE_FFT, dims, hshape, chainshape, resultshape,
                          reinterpret_cast<MKL_Complex16 *>(hco), hstride);
 
-        vslConvSetStart(convtask, startconv);
-        vslCorrSetStart(corrtask, startcorr);
+        vslConvSetStart(convtask, convstart);
+        vslCorrSetStart(corrtask, corrstart);
+
+        vslzConvExecX(convtask, reinterpret_cast<MKL_Complex16 *>(g), gstride,
+                      reinterpret_cast<MKL_Complex16 *>(hgconv), resultstride);
+        vslzCorrExecX(corrtask, reinterpret_cast<MKL_Complex16 *>(g), gstride,
+                      reinterpret_cast<MKL_Complex16 *>(hgcorr), resultstride);
+
 #pragma omp parallel for
         for (int gamma = 0; gamma < Nts; gamma++)
         {
@@ -165,22 +141,6 @@ void QuarticApproximation::calculate()
             vslzCorrExecX(corrtask, reinterpret_cast<MKL_Complex16 *>(&r[gamma]), chain1stride,
                           reinterpret_cast<MKL_Complex16 *>(&r1corr[gamma * 2 * Nts]), resultstride);
         }
-
-        VSLConvTaskPtr hgconvtask;
-        vslzConvNewTaskX(&hgconvtask, VSL_CONV_MODE_FFT, dims, hshape, gshape, resultshape,
-                         reinterpret_cast<MKL_Complex16 *>(hco), hstride);
-        vslConvSetStart(hgconvtask, hgstartconv);
-        vslzConvExecX(hgconvtask, reinterpret_cast<MKL_Complex16 *>(gco), chain2stride,
-                      reinterpret_cast<MKL_Complex16 *>(hgconv), resultstride);
-        vslConvDeleteTask(&hgconvtask);
-
-        VSLCorrTaskPtr hgcorrtask;
-        vslzCorrNewTaskX(&hgcorrtask, VSL_CORR_MODE_FFT, dims, hshape, gshape, resultshape,
-                         reinterpret_cast<MKL_Complex16 *>(hco), hstride);
-        vslCorrSetStart(hgcorrtask, hgstartcorr);
-        vslzCorrExecX(hgcorrtask, reinterpret_cast<MKL_Complex16 *>(gco), chain2stride,
-                      reinterpret_cast<MKL_Complex16 *>(hgcorr), resultstride);
-        vslCorrDeleteTask(&hgcorrtask);
 
         vslConvDeleteTask(&convtask);
         vslCorrDeleteTask(&corrtask);
@@ -258,6 +218,9 @@ void QuarticApproximation::calculate()
             break;
     }
 
+    delete[] hco;
+    delete[] hgconv;
+    delete[] hgcorr;
     delete[] dd;
     delete[] nc;
     delete[] nd1;
@@ -298,11 +261,6 @@ void QuarticApproximation::setU(double U_)
 void QuarticApproximation::setdelmu(double delmu_)
 {
     delmu = delmu_;
-    for (int alpha = Nts; alpha < 3 * Nts; alpha++)
-    {
-        int omega = alpha / Ns, k = alpha % Ns;
-        g[alpha] = -1. / (iw[omega] - 2. * t * cos(2. * pi * k / Ns) - delmu);
-    }
     calculate();
 }
 
@@ -311,43 +269,16 @@ void QuarticApproximation::setparms(double U_, double delmu_)
     U = U_;
     delmu = delmu_;
     f_5 = 0.5 * U * T / Ns;
-    for (int alpha = Nts; alpha < 3 * Nts; alpha++)
-    {
-        int omega = alpha / Ns, k = alpha % Ns;
-        g[alpha] = -1. / (iw[omega] - 2. * t * cos(2. * pi * k / Ns) - delmu);
-    }
     calculate();
 }
 
 QuarticApproximation::Complex QuarticApproximation::greensfunction(int k, int n) const
 {
-    if (n > 3 * Nt / 2 - 1 || n < -3 * Nt / 2)
+    if (n >  Nt / 2 - 1 || n < -Nt / 2)
         return 0;
     k = k % Ns;
-    int tid = n + Nt / 2 < 0 ? n + 7 * Nt / 2 : n + Nt / 2;
-    return g[tid * Ns + k];
+    return g[(n + Nt / 2) * Ns + k];
 }
-
-/* QuarticApproximation::Complex QuarticApproximation::spincorr(int idx, int n) const
-{
-    Complex chi = 0;
-    for (int gamma = 0; gamma < Nts; gamma++)
-    {
-        for (int beta_k = 0; beta_k < Ns; beta_k++)
-        {
-            int beta_omega = tid[gamma] - Nt / 2 + n;
-            if (beta_omega > 3 * Nt / 2 - 1 || beta_omega < -3 * Nt / 2)
-                continue;
-            int beta_tid = beta_omega + Nt / 2 < 0 ? beta_omega + 7 * Nt / 2 : beta_omega + Nt / 2;
-            int beta = beta_tid * Ns + beta_k;
-            if (beta_tid >= 2 * Nt)
-                chi += std::exp(2. * I * pi * double(idx) * double(beta_k - sid[gamma]) / double(Ns)) * 2. * g[beta] * g[gamma];
-            else
-                chi += std::exp(2. * I * pi * double(idx) * double(beta_k - sid[gamma]) / double(Ns)) * (d2[Nts * beta + gamma] / U + 2. * g[beta] * g[gamma]);
-        }
-    }
-    return -chi * T / double(Ns * Ns);
-} */
 
 QuarticApproximation::Complex QuarticApproximation::spincorr(int idx, int n) const
 {
@@ -355,15 +286,15 @@ QuarticApproximation::Complex QuarticApproximation::spincorr(int idx, int n) con
     double rchi = 0., ichi = 0.;
 #pragma omp parallel for reduction(+ \
                                    : rchi, ichi)
-    for (int gamma = 0; gamma < 3 * Nts; gamma++)
+    for (int gamma = 0; gamma < Nts; gamma++)
     {
         Complex temp(0, 0);
         for (int beta_k = 0; beta_k < Ns; beta_k++)
         {
-            int beta_omega = (tid[gamma] >= 2 * Nt ? tid[gamma] - 7 * Nt / 2 : tid[gamma] - Nt / 2) - n;
-            if (beta_omega > 3 * Nt / 2 - 1 || beta_omega < -3 * Nt / 2)
+            int beta_omega = tid[gamma] - Nt / 2 - n;
+            if (beta_omega > Nt / 2 - 1 || beta_omega < -Nt / 2)
                 continue;
-            int beta_tid = beta_omega + Nt / 2 < 0 ? beta_omega + 7 * Nt / 2 : beta_omega + Nt / 2;
+            int beta_tid = beta_omega + Nt / 2;
             int beta = beta_tid * Ns + beta_k;
             if (tid[gamma] >= Nt || beta_tid >= Nt || U == 0.)
                 temp += std::exp(2. * I * pi * double(idx) * double(beta_k - sid[gamma]) / double(Ns)) * 2. * g[beta] * g[gamma];
@@ -375,11 +306,6 @@ QuarticApproximation::Complex QuarticApproximation::spincorr(int idx, int n) con
     }
     chi = Complex(rchi, ichi);
     return -chi * T / double(Ns * Ns);
-}
-
-inline int QuarticApproximation::vsum(int alpha, int beta, int gamma) //++-
-{
-    return (tid[alpha] + tid[beta] - tid[gamma] + 3 * Nt) % (3 * Nt) * Ns + (sid[alpha] + sid[beta] - sid[gamma] + Ns) % Ns;
 }
 
 QuarticApproximation::~QuarticApproximation()
