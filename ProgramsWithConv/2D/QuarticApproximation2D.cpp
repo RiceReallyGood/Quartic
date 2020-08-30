@@ -84,7 +84,7 @@ void QuarticApproximation2D::calculate()
     int convstart[] = {Nt, Nx - 1, Ny - 1};
     int corrstart[] = {-2 * Nt, -Nx + 1, -Ny + 1};
 
-    int gshape[] = {3 * Nt, Nx, Ny};
+    int gshape[] = {Nt, Nx, Ny};
     int gstride[] = {Ns, Ny, 1};
 
     int Nit = 2000;
