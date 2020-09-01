@@ -90,7 +90,6 @@ void QuarticApproximation2D::calculate()
     int Nit = 2000;
     for (int it = 0; it < Nit; it++)
     {
-        std::cout << greensfunction(0, 0, 0) << std::endl;
         Complex nhalf = 0;
         for (int alpha = 0; alpha < Nts; alpha++)
             nhalf += g[alpha];
@@ -98,7 +97,7 @@ void QuarticApproximation2D::calculate()
 
         for (int alpha = 0; alpha < 3 * Nts; alpha++)
             h[alpha] = -1. / (iw[tid[alpha]] - 2. * t * (cos(2. * pi * xid[alpha] / Nx) + cos(2. * pi * yid[alpha] / Ny)) - delmu /*- U / 2.*/ + U * nhalf);
-        //std::cout << nhalf << std::endl;
+        std::cout << "g(0,0,0) = " << greensfunction(0,0,0) << ", density = " << 2. * nhalf.real() + 1. << std::endl;
 
         //write h to hco
         for (int ix = 0; ix < 2 * Nx - 1; ix++)
