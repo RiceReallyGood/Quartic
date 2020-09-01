@@ -92,7 +92,7 @@ void QuarticApproximation2D::calculate()
     {
         std::cout << greensfunction(0, 0, 0) << std::endl;
         Complex nhalf = 0;
-        for (int alpha = 0; alpha < 3 * Nts; alpha++)
+        for (int alpha = 0; alpha < Nts; alpha++)
             nhalf += g[alpha];
         nhalf *= T / Ns;
 
