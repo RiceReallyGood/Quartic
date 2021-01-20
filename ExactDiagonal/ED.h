@@ -19,6 +19,7 @@ public:
     Complex spincorr(int idx, int n) const;             //6. spin-spin correlation(with frequency)
     double spectralfunction(int k, double omega) const; //7. spectral function
     std::vector<Complex> greensfunction(int k, std::vector<int> ntab) const;
+    std::vector<double>  greensfunction(int k, std::vector<double> ttab) const;
     std::vector<Complex> spincorr(int idx, std::vector<int> ntab) const;
     std::vector<double> spectralfunction(int k, std::vector<double> omegatab) const;
 

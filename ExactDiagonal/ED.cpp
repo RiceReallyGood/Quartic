@@ -822,6 +822,75 @@ std::vector<ED::Complex> ED::greensfunction(int k, std::vector<int> ntab) const
     return ret;
 }
 
+std::vector<double> ED::greensfunction(int k, std::vector<double> ttab) const
+{
+    int sz = ttab.size();
+    std::vector<double> ret(sz, 0);
+    for (int rblock = 0; rblock < NNN; rblock++)
+    {
+        if (dim[rblock] == 0)
+            continue;
+        int rp = rblock % Ns;
+        int lblock = rblock + NN + (rp + k) % Ns - rp;
+        if (lblock >= NNN || dim[lblock] == 0)
+            continue;
+        //write cd matrix
+        int nnz = 0;
+        double *val = new double[dim[rblock]];
+        int *row_index = new int[dim[rblock]];
+        int *col_index = new int[dim[rblock]];
+        for (int rindex = 0; rindex < dim[rblock]; rindex++)
+        {
+            int rstate = base[rblock][rindex];
+            int rupstate = rstate % onespindim;
+            if ((rstate >> k) & 1)
+                continue;
+            int lstate = rstate ^ (1 << k);
+            if ((ones[rupstate] - ones[rupstate >> k]) & 1)
+                val[nnz] = -1;
+            else
+                val[nnz] = 1;
+            row_index[nnz] = index[lstate];
+            col_index[nnz] = rindex;
+            nnz++;
+        }
+        if (nnz == 0)
+            continue;
+        sparse_matrix_t cdold;
+        mkl_sparse_d_create_coo(&cdold, SPARSE_INDEX_BASE_ZERO, dim[lblock], dim[rblock], nnz, row_index, col_index, val);
+        struct matrix_descr descr = {SPARSE_MATRIX_TYPE_GENERAL, SPARSE_FILL_MODE_UPPER, SPARSE_DIAG_NON_UNIT};
+        double *temp = new double[dim[lblock] * dim[rblock]];
+        mkl_sparse_d_mm(SPARSE_OPERATION_NON_TRANSPOSE, 1., cdold, descr, SPARSE_LAYOUT_ROW_MAJOR, K[rblock],
+                        dim[rblock], dim[rblock], 0., temp, dim[rblock]);
+        delete[] val;
+        delete[] row_index;
+        delete[] col_index;
+        mkl_sparse_destroy(cdold);
+
+        double *cd = new double[dim[lblock] * dim[rblock]];
+        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, dim[lblock], dim[rblock], dim[lblock], 1., K[lblock],
+                    dim[lblock], temp, dim[rblock], 0., cd, dim[rblock]);
+        delete[] temp;
+        for (int lindex = 0; lindex < dim[lblock]; lindex++)
+        {
+            for (int rindex = 0; rindex < dim[rblock]; rindex++)
+            {
+                cd[lindex * dim[rblock] + rindex] *= cd[lindex * dim[rblock] + rindex];
+                for (int i = 0; i < sz; i++)
+                {
+                    double coeff = w[lblock][lindex] * std::exp(ttab[i] * (egvalues[lblock][lindex] - egvalues[rblock][rindex]));
+                    ret[i] += coeff * cd[lindex * dim[rblock] + rindex];
+                }
+            }
+        }
+        delete[] cd;
+    }
+
+    for (int i = 0; i < sz; i++)
+        ret[i] /= Z;
+    return ret;
+}
+
 std::vector<ED::Complex> ED::spincorr(int idx, std::vector<int> ntab) const
 {
     int sz = ntab.size();
