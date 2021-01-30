@@ -878,7 +878,8 @@ std::vector<double> ED::greensfunction(int k, std::vector<double> ttab) const
                 cd[lindex * dim[rblock] + rindex] *= cd[lindex * dim[rblock] + rindex];
                 for (int i = 0; i < sz; i++)
                 {
-                    double coeff = w[lblock][lindex] * std::exp(ttab[i] * (egvalues[lblock][lindex] - egvalues[rblock][rindex]));
+                    // double coeff = w[lblock][lindex] * std::exp(ttab[i] * (egvalues[lblock][lindex] - egvalues[rblock][rindex]));
+                    double coeff = std::exp(-(1./T - ttab[i]) * egvalues[lblock][lindex] - ttab[i] * egvalues[rblock][rindex]);
                     ret[i] += coeff * cd[lindex * dim[rblock] + rindex];
                 }
             }
