@@ -248,6 +248,21 @@ double ED::nup(int k) const
     return ret / Z;
 }
 
+
+// density
+double ED::density() const {
+    double den = 0.;
+    for(int block = 0; block < NNN; block++) {
+        double weight = 0.;
+        for(int index = 0; index < dim[block]; index++) {
+            weight += w[block][index];
+        }
+        int nu = block / NN, nd = block % NN / Ns;
+        den += weight * (nu + nd);
+    }
+    return den / (double(Ns) * Z);
+}
+
 //3. density-density correlation
 double ED::denscorr(int idx) const
 {

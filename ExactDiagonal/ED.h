@@ -18,6 +18,7 @@ public:
     Complex denscorr(int idx, int n) const;             //5. density-density correlation(with frequency)
     Complex spincorr(int idx, int n) const;             //6. spin-spin correlation(with frequency)
     double spectralfunction(int k, double omega) const; //7. spectral function
+    double density() const;
     std::vector<Complex> greensfunction(int k, std::vector<int> ntab) const;
     std::vector<double>  greensfunction(int k, std::vector<double> ttab) const;
     std::vector<Complex> spincorr(int idx, std::vector<int> ntab) const;
